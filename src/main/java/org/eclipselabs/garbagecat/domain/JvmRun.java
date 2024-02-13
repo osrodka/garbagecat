@@ -51,6 +51,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -80,9 +81,15 @@ import org.github.joa.domain.JvmContext;
 public class JvmRun {
 
     /**
-     * Memory being allocated per second (kilobytes).
+     * Min, Max memory being allocated per second (kilobytes) between two collections in row.
+     * Avg memory being allocated per second (kilobytes).
      */
-    private BigDecimal allocationRate;
+    private Map<String,Long> minMaxAllocationRates;
+
+    /**
+     * High memory allocations.
+     */
+    private List<String> highAllocationRates;
 
     /**
      * Analysis.
@@ -344,6 +351,12 @@ public class JvmRun {
      * flagged a bottleneck.
      */
     private int throughputThreshold;
+
+    /**
+     * The maximum memory allocation to be not flagged as high memory allocation pressure.
+     * TO DO: make configurable from cmd.
+     */
+    private int highMemoryAllocationThreshold = 2048;
 
     /**
      * Log lines that do not match any existing logging patterns.
@@ -659,10 +672,18 @@ public class JvmRun {
 
     /**
      *
-     * @return The amount of memory allocated per time unit expressed in MB/sec
+     * @return The map with min, max and avg amount of memory allocated per time unit expressed in MB/sec
      */
-    public BigDecimal getAllocationRate() {
-        return allocationRate;
+    public Map<String,Long> getMinMaxAllocationRates() {
+        return minMaxAllocationRates;
+    }
+
+    /**
+     *
+     * @return The list of high memory allocations above defined threshold.
+     */
+    public List<String> getHighAllocationRates() {
+        return highAllocationRates;
     }
 
     /**
@@ -1169,6 +1190,10 @@ public class JvmRun {
         return throughputThreshold;
     }
 
+    public int getHighMemoryAllocationThreshold() {
+        return highMemoryAllocationThreshold;
+    }
+
     public List<String> getUnidentifiedLogLines() {
         return unidentifiedLogLines;
     }
@@ -1269,8 +1294,12 @@ public class JvmRun {
         return preprocessed;
     }
 
-    public void setAllocationRate(BigDecimal mbPerSecond) {
-        allocationRate = mbPerSecond;
+    public void setMinMaxAllocationRates(Map<String,Long> allocations) {
+        this.minMaxAllocationRates = allocations;
+    }
+
+    public void setHighAllocationRates(List<String> allocations) {
+        this.highAllocationRates = allocations;
     }
 
     public void setAnalysis(List<Analysis> analysis) {

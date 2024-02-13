@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.HelpFormatter;
@@ -373,14 +374,27 @@ public class Main {
                 }
                 printWriter.write(jvmRun.getGcThroughput() + "%" + LINE_SEPARATOR);
 
-                // As of now the allocation rate is only implemented for G1GC collector.
+                // As of now the max/min allocation rate is only implemented for G1GC collector.
                 if (jvmRun.getJvmOptions().getUseG1Gc() != null
-                        || jvmRun.getEventTypes().contains(LogEventType.G1_YOUNG_PAUSE)) {
-                    BigDecimal allocationRate = jvmRun.getAllocationRate();
-                    if (allocationRate.longValue() > 0) {
-                        Memory gbPerSec = Memory.memory(allocationRate.longValue(), KILOBYTES);
-                        printWriter.write("Allocation Rate: " + Long.toString(gbPerSec.getValue(MEGABYTES)) + " MB/sec"
-                                + LINE_SEPARATOR);
+                        || jvmRun.getEventTypes().contains(LogEventType.G1_YOUNG_PAUSE)
+                        || jvmRun.getEventTypes().contains(LogEventType.UNIFIED_G1_YOUNG_PAUSE)) {
+                    Map<String,Long> minMaxAllocationRates = jvmRun.getMinMaxAllocationRates();
+                    long allocationRate = minMaxAllocationRates.get("avg");
+                    long maxAllocationRate = minMaxAllocationRates.get("max");
+                    long minAllocationRate = minMaxAllocationRates.get("min");
+                    if (allocationRate > 0 && maxAllocationRate > 0 && minAllocationRate >= 0) {
+                        Memory avgKBPerSec = Memory.memory(allocationRate, KILOBYTES);
+                        Memory maxKBPerSec = Memory.memory(maxAllocationRate, KILOBYTES);
+                        Memory minKBPerSec = Memory.memory(minAllocationRate, KILOBYTES);
+                        printWriter.write(
+                                "Avg Allocation Rate: " + Long.toString(avgKBPerSec.getValue(MEGABYTES)) + " MB/sec"
+                                        + LINE_SEPARATOR);
+                        printWriter.write(
+                                "Max Allocation Rate: " + Long.toString(maxKBPerSec.getValue(MEGABYTES)) + " MB/sec"
+                                        + LINE_SEPARATOR);
+                        printWriter.write(
+                                "Min Allocation Rate: " + Long.toString(minKBPerSec.getValue(MEGABYTES)) + " MB/sec"
+                                        + LINE_SEPARATOR);
                     }
                 }
 
@@ -603,6 +617,24 @@ public class Main {
                     printWriter.write(LINE_SEPARATOR);
                 }
                 printWriter.write(LINEBREAK_DOUBLE);
+            }
+
+            // High Memory Allocations
+            List<String> allocations = jvmRun.getHighAllocationRates();
+            if (!allocations.isEmpty()) {
+                printWriter.write(
+                        "Memory Allocations greater than " + jvmRun.getHighMemoryAllocationThreshold() + " MB/sec"
+                                + LINE_SEPARATOR);
+                printWriter.write(LINEBREAK_SINGLE);
+                for (String allocation : allocations) {
+                    if (jvmRun.getStartDate() != null) {
+                        printWriter
+                                .write(JdkUtil.convertLogEntryTimestampsToDateStamp(allocation, jvmRun.getStartDate())
+                                        + LINE_SEPARATOR);
+                    } else {
+                        printWriter.write(allocation + LINE_SEPARATOR);
+                    }
+                }
             }
 
             // GC Bottlenecks

@@ -12,16 +12,19 @@
  *********************************************************************************************************************/
 package org.eclipselabs.garbagecat.service;
 
+import static java.util.stream.Collectors.toList;
 import static org.eclipselabs.garbagecat.util.Memory.kilobytes;
 import static org.eclipselabs.garbagecat.util.Memory.Unit.BYTES;
 import static org.eclipselabs.garbagecat.util.Memory.Unit.KILOBYTES;
+import static org.eclipselabs.garbagecat.util.Memory.Unit.MEGABYTES;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 
@@ -50,7 +53,6 @@ import org.eclipselabs.garbagecat.domain.jdk.G1Collector;
 import org.eclipselabs.garbagecat.domain.jdk.G1ExtRootScanningData;
 import org.eclipselabs.garbagecat.domain.jdk.G1FullGcEvent;
 import org.eclipselabs.garbagecat.domain.jdk.G1YoungInitialMarkEvent;
-import org.eclipselabs.garbagecat.domain.jdk.G1YoungPauseEvent;
 import org.eclipselabs.garbagecat.domain.jdk.GcEvent;
 import org.eclipselabs.garbagecat.domain.jdk.GcLockerScavengeFailedEvent;
 import org.eclipselabs.garbagecat.domain.jdk.GcOverheadLimitEvent;
@@ -139,20 +141,24 @@ public class GcManager {
         this.jvmStartDate = jvmStartDate;
     }
 
-    /**
-     * Allocation rate in KB per second.
-     */
-    private BigDecimal getAllocationRate() {
-        List<BlockingEvent> blockingEvents = jvmDao.getBlockingEvents(LogEventType.G1_YOUNG_PAUSE);
+    private Map<String,Long> getMinMaxAllocationRates() {
+        Map<String,Long> allocations = new HashMap<String,Long>();
+        List<BlockingEvent> blockingEvents = jvmDao.getBlockingEvents().stream()
+                .filter(e -> e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PAUSE.toString())
+                        || e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PREPARE_MIXED.toString())
+                        || e.getName().equals(LogEventType.UNIFIED_G1_MIXED_PAUSE.toString())
+                        || e.getName().equals(LogEventType.G1_FULL_GC_PARALLEL.toString()))
+                .collect(toList());
 
-        if (blockingEvents.isEmpty())
-            return BigDecimal.ZERO;
-
-        long allocatedKb = 0;
-        G1YoungPauseEvent prior = null;
+        long maxAllocatedKbPerSec = 0;
+        long minAllocatedKbPerSec = -1;
+        long totalAllocatedMemory = 0;
         long firstEventTs = 0;
+        BlockingEvent prior = null;
+
         for (BlockingEvent event : blockingEvents) {
-            G1YoungPauseEvent young = (G1YoungPauseEvent) event;
+            BlockingEvent young = event;
+            long allocatedKb = 0;
             if (prior == null) {
                 // skip the first event since we don't know if this is a complete JVM run
                 // and therefore can't accurately calculate allocation rate prior to the first log
@@ -162,21 +168,80 @@ public class GcManager {
                 continue;
             }
             // will not have eden information if gc details not being logged
-            if (young.getEdenOccupancyInit() != null && prior.getEdenOccupancyEnd() != null) {
-                allocatedKb += young.getEdenOccupancyInit().minus(prior.getEdenOccupancyEnd()).getValue(KILOBYTES);
+            if (young instanceof CombinedData && prior instanceof CombinedData) {
+                Memory init = ((CombinedData) young).getCombinedOccupancyInit();
+                Memory end = ((CombinedData) prior).getCombinedOccupancyEnd();
+                if (init != null && end != null && init.greaterThan(end)) {
+                    allocatedKb += init.minus(end).getValue(KILOBYTES);
+                    long durationMs = young.getTimestamp() - prior.getTimestamp();
+                    long allocatedKbPerSec = allocatedKb / durationMs * 1000;
+
+                    minAllocatedKbPerSec = (minAllocatedKbPerSec == -1 || minAllocatedKbPerSec > allocatedKbPerSec)
+                            ? allocatedKbPerSec
+                            : minAllocatedKbPerSec;
+                    maxAllocatedKbPerSec = (maxAllocatedKbPerSec < allocatedKbPerSec) ? allocatedKbPerSec
+                            : maxAllocatedKbPerSec;
+                    totalAllocatedMemory += allocatedKb;
+                }
+            }
+            prior = young;
+        }
+        
+        allocations.put("max", maxAllocatedKbPerSec);
+        allocations.put("min", minAllocatedKbPerSec);
+        allocations.put("avg", totalAllocatedMemory / (prior.getTimestamp() - firstEventTs) * 1000);
+
+        return allocations;
+    }
+
+    /**
+     * @return
+     */
+    private List<String> getHighAllocationRates(int highMemoryAllocationThreshold) {
+        List<String> allocations = new ArrayList<String>();
+        List<BlockingEvent> blockingEvents = jvmDao.getBlockingEvents().stream()
+                .filter(e -> e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PAUSE.toString())
+                        || e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PREPARE_MIXED.toString())
+                        || e.getName().equals(LogEventType.UNIFIED_G1_MIXED_PAUSE.toString())
+                        || e.getName().equals(LogEventType.G1_FULL_GC_PARALLEL.toString()))
+                .collect(toList());
+
+        BlockingEvent prior = null;
+        // convert from Mb to Kb
+        long treshold = highMemoryAllocationThreshold * 1024;
+
+        for (BlockingEvent event : blockingEvents) {
+            BlockingEvent young = event;
+            long allocatedKb = 0;
+            if (prior == null) {
+                // skip the first event since we don't know if this is a complete JVM run
+                // and therefore can't accurately calculate allocation rate prior to the first log
+                // youngGc pause event
+                prior = young;
+                continue;
+            }
+            // will not have eden information if gc details not being logged
+            if (young instanceof CombinedData && prior instanceof CombinedData) {
+                Memory init = ((CombinedData) young).getCombinedOccupancyInit();
+                Memory end = ((CombinedData) prior).getCombinedOccupancyEnd();
+                if (init != null && end != null && init.greaterThan(end)) {
+                    allocatedKb = init.minus(end).getValue(KILOBYTES);
+                    long durationMs = young.getTimestamp() - prior.getTimestamp();
+                    long allocatedKbPerSec = allocatedKb / durationMs * 1000;
+
+                    if (allocatedKbPerSec > treshold) {
+                        allocations.add(Long.toString(Memory.memory(allocatedKbPerSec, KILOBYTES).getValue(MEGABYTES))
+                                .concat(" MB/s"));
+                        allocations.add("|--".concat(prior.getLogEntry()));
+                        allocations.add("|--".concat(young.getLogEntry()));
+                        allocations.add("...");
+                    }
+                }
             }
             prior = young;
         }
 
-        BigDecimal durationMs = BigDecimal.valueOf(prior.getTimestamp() - firstEventTs);
-        if (durationMs.longValue() <= 0)
-            return BigDecimal.ZERO;
-
-        Memory allocated = Memory.kilobytes(allocatedKb);
-
-        BigDecimal kilobytesPerSec = BigDecimal.valueOf(allocated.getValue(KILOBYTES) / durationMs.longValue());
-
-        return kilobytesPerSec.multiply(BigDecimal.valueOf(1000));
+        return allocations;
     }
 
     /**
@@ -257,7 +322,8 @@ public class GcManager {
         }
         jvmRun.setJvmOptions(new JvmOptions(jvmDao.getJvmContext()));
 
-        jvmRun.setAllocationRate(getAllocationRate());
+        jvmRun.setMinMaxAllocationRates(getMinMaxAllocationRates());
+        jvmRun.setHighAllocationRates(getHighAllocationRates(jvmRun.getHighMemoryAllocationThreshold()));
         jvmRun.setAnalysis(jvmDao.getAnalysis());
         jvmRun.setBlockingEventCount(jvmDao.getBlockingEventCount());
         jvmRun.setEventTypes(jvmDao.getEventTypes());
