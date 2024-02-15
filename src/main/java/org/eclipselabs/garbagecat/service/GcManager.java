@@ -152,6 +152,7 @@ public class GcManager {
 
         long maxAllocatedKbPerSec = 0;
         long minAllocatedKbPerSec = -1;
+        long avgAllocatedKbPerSec = 0;
         long totalAllocatedMemory = 0;
         long firstEventTs = 0;
         BlockingEvent prior = null;
@@ -187,9 +188,13 @@ public class GcManager {
             prior = young;
         }
         
+        avgAllocatedKbPerSec = (prior != null && (prior.getTimestamp() - firstEventTs) > 0)
+                ? (totalAllocatedMemory / (prior.getTimestamp() - firstEventTs) * 1000)
+                : avgAllocatedKbPerSec;
+
         allocations.put("max", maxAllocatedKbPerSec);
         allocations.put("min", minAllocatedKbPerSec);
-        allocations.put("avg", totalAllocatedMemory / (prior.getTimestamp() - firstEventTs) * 1000);
+        allocations.put("avg", avgAllocatedKbPerSec);
 
         return allocations;
     }
@@ -312,8 +317,8 @@ public class GcManager {
      *            The throughput threshold for bottleneck reporting.
      * @return The JVM run data.
      */
-    public JvmRun getJvmRun(String jvmOptions, int throughputThreshold) {
-        JvmRun jvmRun = new JvmRun(throughputThreshold, jvmStartDate);
+    public JvmRun getJvmRun(String jvmOptions, int throughputThreshold, int highMemoryAllocationThreshold) {
+        JvmRun jvmRun = new JvmRun(throughputThreshold, highMemoryAllocationThreshold, jvmStartDate);
         // Use jvm options passed in on the command line if none found in the logging
         // TODO: jvm options passed on the command line should override options found in the logging header because the
         // logging header doesn't include every option (e.g. -Xloggc).

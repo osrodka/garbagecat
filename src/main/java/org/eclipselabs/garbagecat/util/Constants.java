@@ -32,6 +32,11 @@ public class Constants {
     public static final int DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD = 90;
 
     /**
+     * The maximum memory allocation threshold (MB/s) to not be flagged a high memory pressure.
+     */
+    public static final int DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD = 2048;
+
+    /**
      * The threshold for the time (seconds) for the first log entry for a GC log to be considered complete. First log
      * entries with timestamps below the threshold may indicate a partial GC log or GC events that were not a
      * recognizable format.
@@ -132,6 +137,16 @@ public class Constants {
      * Threshold command line short option.
      */
     public static final String OPTION_THRESHOLD_SHORT = "t";
+
+    /**
+     * Memory allocation threshold command line long option.
+     */
+    public static final String OPTION_MEMALLOCTHRESHOLD_LONG = "memallocthreshold";
+
+    /**
+     * Memory allocation threshold command line short option.
+     */
+    public static final String OPTION_MEMALLOCTHRESHOLD_SHORT = "m";
 
     /**
      * Verbose command line long option.

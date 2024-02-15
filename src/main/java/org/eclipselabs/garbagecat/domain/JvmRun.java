@@ -353,10 +353,9 @@ public class JvmRun {
     private int throughputThreshold;
 
     /**
-     * The maximum memory allocation to be not flagged as high memory allocation pressure.
-     * TO DO: make configurable from cmd.
+     * The maximum memory allocation threshold (MB/s) to not be flagged a high memory pressure.
      */
-    private int highMemoryAllocationThreshold = 2048;
+    private int highMemoryAllocationThreshold;
 
     /**
      * Log lines that do not match any existing logging patterns.
@@ -404,8 +403,9 @@ public class JvmRun {
      * @param startDate
      *            The JVM start date.
      */
-    public JvmRun(int throughputThreshold, Date startDate) {
+    public JvmRun(int throughputThreshold, int highMemoryAllocationThreshold, Date startDate) {
         this.throughputThreshold = throughputThreshold;
+        this.highMemoryAllocationThreshold = highMemoryAllocationThreshold;
         this.startDate = startDate;
     }
 

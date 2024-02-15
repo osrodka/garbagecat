@@ -16,6 +16,8 @@ import static org.eclipselabs.garbagecat.util.Constants.OPTION_HELP_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_HELP_SHORT;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_JVMOPTIONS_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_JVMOPTIONS_SHORT;
+import static org.eclipselabs.garbagecat.util.Constants.OPTION_MEMALLOCTHRESHOLD_LONG;
+import static org.eclipselabs.garbagecat.util.Constants.OPTION_MEMALLOCTHRESHOLD_SHORT;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_OUTPUT_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_OUTPUT_SHORT;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_PREPROCESS_LONG;
@@ -61,6 +63,8 @@ public class OptionsParser {
                 "JVM start datetime (yyyy-MM-dd HH:mm:ss.SSS) to convert uptime to datestamp");
         options.addOption(OPTION_THRESHOLD_SHORT, OPTION_THRESHOLD_LONG, true,
                 "threshold (0-100) for throughput bottleneck reporting");
+        options.addOption(OPTION_MEMALLOCTHRESHOLD_SHORT, OPTION_MEMALLOCTHRESHOLD_LONG, true,
+                "memory allocation threshold (MB/s) for high memory pressure reporting");
         options.addOption(OPTION_REORDER_SHORT, OPTION_REORDER_LONG, false, "reorder logging by timestamp");
         options.addOption(OPTION_OUTPUT_SHORT, OPTION_OUTPUT_LONG, true,
                 "output file name (default " + OUTPUT_FILE_NAME + ")");

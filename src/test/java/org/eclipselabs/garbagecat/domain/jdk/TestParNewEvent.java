@@ -55,7 +55,8 @@ class TestParNewEvent {
         URI logFileUri = testFile.toURI();
         List<String> logLines = Files.readAllLines(Paths.get(logFileUri));
         gcManager.store(logLines, false);
-        JvmRun jvmRun = gcManager.getJvmRun(jvmOptions, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD);
+        JvmRun jvmRun = gcManager.getJvmRun(jvmOptions, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD,
+                        Constants.DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD);
         assertTrue(jvmRun.hasAnalysis(org.github.joa.util.Analysis.INFO_CMS_INCREMENTAL_MODE.getKey()),
                 org.github.joa.util.Analysis.INFO_CMS_INCREMENTAL_MODE + " analysis not identified.");
         assertTrue(jvmRun.hasAnalysis(org.github.joa.util.Analysis.WARN_CMS_INC_MODE_WITH_INIT_OCCUP_FRACT.getKey()),
@@ -461,7 +462,8 @@ class TestParNewEvent {
         URI logFileUri = testFile.toURI();
         List<String> logLines = Files.readAllLines(Paths.get(logFileUri));
         gcManager.store(logLines, false);
-        JvmRun jvmRun = gcManager.getJvmRun(null, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD);
+        JvmRun jvmRun = gcManager.getJvmRun(null, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD,
+                        Constants.DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD);
         assertEquals(1, jvmRun.getEventTypes().size(), "Event type count not correct.");
         assertTrue(jvmRun.getEventTypes().contains(JdkUtil.LogEventType.PAR_NEW),
                 "Log line not recognized as " + JdkUtil.LogEventType.PAR_NEW.toString() + ".");
@@ -481,7 +483,8 @@ class TestParNewEvent {
         URI logFileUri = testFile.toURI();
         List<String> logLines = Files.readAllLines(Paths.get(logFileUri));
         gcManager.store(logLines, false);
-        JvmRun jvmRun = gcManager.getJvmRun(null, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD);
+        JvmRun jvmRun = gcManager.getJvmRun(null, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD,
+                        Constants.DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD);
         // Don't report datestamp only lines unidentified
         assertFalse(jvmRun.hasAnalysis(Analysis.ERROR_UNIDENTIFIED_LOG_LINES_PREPARSE.getKey()),
                 Analysis.ERROR_UNIDENTIFIED_LOG_LINES_PREPARSE + " analysis incorrectly identified.");
@@ -507,7 +510,8 @@ class TestParNewEvent {
         List<String> logLines = Files.readAllLines(Paths.get(logFileUri));
         logLines = gcManager.preprocess(logLines, null);
         gcManager.store(logLines, false);
-        JvmRun jvmRun = gcManager.getJvmRun(null, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD);
+        JvmRun jvmRun = gcManager.getJvmRun(null, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD,
+                        Constants.DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD);
         assertFalse(jvmRun.getEventTypes().contains(LogEventType.UNKNOWN),
                 JdkUtil.LogEventType.UNKNOWN.toString() + " collector identified.");
         assertEquals(2, jvmRun.getEventTypes().size(), "Event type count not correct.");

@@ -15,10 +15,13 @@ package org.eclipselabs.garbagecat;
 import static org.eclipselabs.garbagecat.OptionsParser.options;
 import static org.eclipselabs.garbagecat.OptionsParser.parseOptions;
 import static org.eclipselabs.garbagecat.util.Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD;
+import static org.eclipselabs.garbagecat.util.Constants.DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD;
 import static org.eclipselabs.garbagecat.util.Constants.LINE_SEPARATOR;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_HELP_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_JVMOPTIONS_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_JVMOPTIONS_SHORT;
+import static org.eclipselabs.garbagecat.util.Constants.OPTION_MEMALLOCTHRESHOLD_LONG;
+import static org.eclipselabs.garbagecat.util.Constants.OPTION_MEMALLOCTHRESHOLD_SHORT;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_OUTPUT_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_OUTPUT_SHORT;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_PREPROCESS_LONG;
@@ -147,7 +150,10 @@ public class Main {
         int throughputThreshold = cmd.hasOption(OPTION_THRESHOLD_LONG)
                 ? Integer.parseInt(cmd.getOptionValue(OPTION_THRESHOLD_SHORT))
                 : DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD;
-        JvmRun jvmRun = gcManager.getJvmRun(jvmOptions, throughputThreshold);
+        int highMemoryAllocationThreshold = cmd.hasOption(OPTION_MEMALLOCTHRESHOLD_LONG)
+                ? Integer.parseInt(cmd.getOptionValue(OPTION_MEMALLOCTHRESHOLD_SHORT))
+                : DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD;
+        JvmRun jvmRun = gcManager.getJvmRun(jvmOptions, throughputThreshold, highMemoryAllocationThreshold);
         boolean reportConsole = cmd.hasOption(OPTION_REPORT_CONSOLE_LONG);
         createReport(jvmRun, reportConsole, reportFile, logFileName);
         if (verbose) {
