@@ -12,13 +12,18 @@
  *********************************************************************************************************************/
 package org.eclipselabs.garbagecat.domain.jdk.unified;
 
+import static org.eclipselabs.garbagecat.util.Memory.memory;
+import static org.eclipselabs.garbagecat.util.Memory.Unit.KILOBYTES;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipselabs.garbagecat.domain.BlockingEvent;
+import org.eclipselabs.garbagecat.domain.CombinedData;
 import org.eclipselabs.garbagecat.domain.ParallelEvent;
 import org.eclipselabs.garbagecat.domain.TimesData;
 import org.eclipselabs.garbagecat.domain.jdk.UnknownCollector;
+import org.eclipselabs.garbagecat.util.Memory;
 import org.eclipselabs.garbagecat.util.jdk.JdkMath;
 import org.eclipselabs.garbagecat.util.jdk.JdkRegEx;
 import org.eclipselabs.garbagecat.util.jdk.JdkUtil;
@@ -56,7 +61,7 @@ import org.eclipselabs.garbagecat.util.jdk.unified.UnifiedRegEx;
  * 
  */
 public class UnifiedRemarkEvent extends UnknownCollector
-        implements UnifiedLogging, BlockingEvent, ParallelEvent, TimesData {
+        implements UnifiedLogging, BlockingEvent, ParallelEvent, TimesData, CombinedData {
 
     /**
      * Regular expressions defining the logging JDK9+.
@@ -84,6 +89,21 @@ public class UnifiedRemarkEvent extends UnknownCollector
         return REGEX_PATTERN.matcher(logLine).matches() || REGEX_PREPROCESSED_PATTERN.matcher(logLine).matches();
     }
 
+    /**
+     * Combined young + old generation allocation.
+     */
+    private Memory combinedAllocation;
+
+    /**
+     * Combined young + old generation size at beginning of GC event.
+     */
+    private Memory combinedBegin;
+
+    /**
+     * Combined young + old generation size at end of GC event.
+     */
+    private Memory combinedEnd;
+    
     /**
      * The elapsed clock time for the GC event in microseconds (rounded).
      */
@@ -144,6 +164,12 @@ public class UnifiedRemarkEvent extends UnknownCollector
                         endTimestamp = JdkUtil.convertDatestampToMillis(matcher.group(2));
                     }
                 }
+                combinedBegin = memory(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 1),
+                        matcher.group(UnifiedRegEx.DECORATOR_SIZE + 3).charAt(0)).convertTo(KILOBYTES);
+                combinedEnd = memory(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 4),
+                        matcher.group(UnifiedRegEx.DECORATOR_SIZE + 6).charAt(0)).convertTo(KILOBYTES);
+                combinedAllocation = memory(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 7),
+                        matcher.group(UnifiedRegEx.DECORATOR_SIZE + 9).charAt(0)).convertTo(KILOBYTES);
                 duration = JdkMath.convertMillisToMicros(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 10)).intValue();
                 timestamp = endTimestamp - JdkMath.convertMicrosToMillis(duration).longValue();
                 timeUser = TimesData.NO_DATA;
@@ -169,6 +195,12 @@ public class UnifiedRemarkEvent extends UnknownCollector
                         timestamp = JdkUtil.convertDatestampToMillis(matcher.group(2));
                     }
                 }
+                combinedBegin = memory(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 1),
+                        matcher.group(UnifiedRegEx.DECORATOR_SIZE + 3).charAt(0)).convertTo(KILOBYTES);
+                combinedEnd = memory(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 4),
+                        matcher.group(UnifiedRegEx.DECORATOR_SIZE + 6).charAt(0)).convertTo(KILOBYTES);
+                combinedAllocation = memory(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 7),
+                        matcher.group(UnifiedRegEx.DECORATOR_SIZE + 9).charAt(0)).convertTo(KILOBYTES);
                 duration = JdkMath.convertMillisToMicros(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 10)).intValue();
                 if (matcher.group(UnifiedRegEx.DECORATOR_SIZE + 11) != null) {
                     timeUser = JdkMath.convertSecsToCentis(matcher.group(UnifiedRegEx.DECORATOR_SIZE + 12)).intValue();
@@ -196,6 +228,18 @@ public class UnifiedRemarkEvent extends UnknownCollector
         this.logEntry = logEntry;
         this.timestamp = timestamp;
         this.duration = duration;
+    }
+
+    public Memory getCombinedOccupancyEnd() {
+        return combinedEnd;
+    }
+
+    public Memory getCombinedOccupancyInit() {
+        return combinedBegin;
+    }
+
+    public Memory getCombinedSpace() {
+        return combinedAllocation;
     }
 
     public long getDurationMicros() {

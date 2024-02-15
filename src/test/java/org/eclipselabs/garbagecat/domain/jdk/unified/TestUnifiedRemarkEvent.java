@@ -12,6 +12,7 @@
  *********************************************************************************************************************/
 package org.eclipselabs.garbagecat.domain.jdk.unified;
 
+import static org.eclipselabs.garbagecat.util.Memory.kilobytes;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -82,6 +83,10 @@ class TestUnifiedRemarkEvent {
                 "Log line not recognized as " + JdkUtil.LogEventType.UNIFIED_REMARK.toString() + ".");
         UnifiedRemarkEvent event = new UnifiedRemarkEvent(logLine);
         assertEquals((long) (7944 - 1), event.getTimestamp(), "Time stamp not parsed correctly.");
+        assertEquals(kilobytes(8 * 1024), event.getCombinedOccupancyInit(),
+                        "Combined begin size not parsed correctly.");
+        assertEquals(kilobytes(8 * 1024), event.getCombinedOccupancyEnd(), "Combined end size not parsed correctly.");
+        assertEquals(kilobytes(10 * 1024), event.getCombinedSpace(), "Combined allocation size not parsed correctly.");
         assertEquals(1767, event.getDurationMicros(), "Duration not parsed correctly.");
     }
 
@@ -94,6 +99,10 @@ class TestUnifiedRemarkEvent {
         UnifiedRemarkEvent event = new UnifiedRemarkEvent(logLine);
         assertEquals((long) 16053, event.getTimestamp(), "Time stamp not parsed correctly.");
         assertEquals(2328, event.getDurationMicros(), "Duration not parsed correctly.");
+        assertEquals(kilobytes(29 * 1024), event.getCombinedOccupancyInit(),
+                        "Combined begin size not parsed correctly.");
+        assertEquals(kilobytes(29 * 1024), event.getCombinedOccupancyEnd(), "Combined end size not parsed correctly.");
+        assertEquals(kilobytes(46 * 1024), event.getCombinedSpace(), "Combined allocation size not parsed correctly.");
         assertEquals(1, event.getTimeUser(), "User time not parsed correctly.");
         assertEquals(0, event.getTimeReal(), "Real time not parsed correctly.");
         assertEquals(Integer.MAX_VALUE, event.getParallelism(), "Parallelism not calculated correctly.");

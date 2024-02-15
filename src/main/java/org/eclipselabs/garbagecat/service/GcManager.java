@@ -147,6 +147,8 @@ public class GcManager {
                 .filter(e -> e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PAUSE.toString())
                         || e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PREPARE_MIXED.toString())
                         || e.getName().equals(LogEventType.UNIFIED_G1_MIXED_PAUSE.toString())
+                        || e.getName().equals(LogEventType.UNIFIED_G1_CLEANUP.toString())
+                        || e.getName().equals(LogEventType.UNIFIED_REMARK.toString())
                         || e.getName().equals(LogEventType.G1_FULL_GC_PARALLEL.toString()))
                 .collect(toList());
 
@@ -208,6 +210,8 @@ public class GcManager {
                 .filter(e -> e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PAUSE.toString())
                         || e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PREPARE_MIXED.toString())
                         || e.getName().equals(LogEventType.UNIFIED_G1_MIXED_PAUSE.toString())
+                        || e.getName().equals(LogEventType.UNIFIED_G1_CLEANUP.toString())
+                        || e.getName().equals(LogEventType.UNIFIED_REMARK.toString())
                         || e.getName().equals(LogEventType.G1_FULL_GC_PARALLEL.toString()))
                 .collect(toList());
 
