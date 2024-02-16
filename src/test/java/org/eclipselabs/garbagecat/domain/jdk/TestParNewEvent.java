@@ -30,6 +30,7 @@ import org.eclipselabs.garbagecat.domain.JvmRun;
 import org.eclipselabs.garbagecat.service.GcManager;
 import org.eclipselabs.garbagecat.util.Constants;
 import org.eclipselabs.garbagecat.util.GcUtil;
+import org.eclipselabs.garbagecat.util.Memory.Unit;
 import org.eclipselabs.garbagecat.util.jdk.Analysis;
 import org.eclipselabs.garbagecat.util.jdk.GcTrigger;
 import org.eclipselabs.garbagecat.util.jdk.JdkUtil;
@@ -458,13 +459,15 @@ class TestParNewEvent {
         File testFile = TestUtil.getFile("dataset113.txt");
         // Set jvm start date to 61 seconds before logging
         Date jvmStartDate = GcUtil.parseDateStamp("2017-02-28T11:25:23.135+0100");
-        GcManager gcManager = new GcManager(jvmStartDate);
+        Unit memoryUnit = Unit.KILOBYTES;
+        GcManager gcManager = new GcManager(jvmStartDate, memoryUnit);
         URI logFileUri = testFile.toURI();
         List<String> logLines = Files.readAllLines(Paths.get(logFileUri));
         gcManager.store(logLines, false);
         JvmRun jvmRun = gcManager.getJvmRun(null, Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD,
                         Constants.DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD);
         assertEquals(1, jvmRun.getEventTypes().size(), "Event type count not correct.");
+        assertEquals(memoryUnit, jvmRun.getMemoryUnit(), "Memory unit not correct");
         assertTrue(jvmRun.getEventTypes().contains(JdkUtil.LogEventType.PAR_NEW),
                 "Log line not recognized as " + JdkUtil.LogEventType.PAR_NEW.toString() + ".");
         assertTrue(jvmRun.hasAnalysis(Analysis.INFO_FIRST_TIMESTAMP_THRESHOLD_EXCEEDED.getKey()),

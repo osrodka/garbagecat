@@ -12,6 +12,10 @@
  *********************************************************************************************************************/
 package org.eclipselabs.garbagecat.util;
 
+import static org.eclipselabs.garbagecat.util.Memory.Unit.MEGABYTES;
+
+import org.eclipselabs.garbagecat.util.Memory.Unit;
+
 /**
  * Global constants.
  * 
@@ -32,9 +36,14 @@ public class Constants {
     public static final int DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD = 90;
 
     /**
-     * The maximum memory allocation threshold (MB/s) to not be flagged a high memory pressure.
+     * The maximum memory allocation threshold (memory unit/sec) to not be flagged a high memory pressure.
      */
-    public static final int DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD = 2048;
+    public static final long DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD = 2048;
+
+    /**
+     * The memory unit used for reporting.
+     */
+    public static final Unit DEFAULT_MEMORY_UNIT = MEGABYTES;
 
     /**
      * The threshold for the time (seconds) for the first log entry for a GC log to be considered complete. First log
@@ -147,6 +156,16 @@ public class Constants {
      * Memory allocation threshold command line short option.
      */
     public static final String OPTION_MEMALLOCTHRESHOLD_SHORT = "m";
+
+    /**
+     * Memory unit command line long option.
+     */
+    public static final String OPTION_MEMORYUNIT_LONG = "memoryunit";
+
+    /**
+     * Memory unit threshold command line short option.
+     */
+    public static final String OPTION_MEMORYUNIT_SHORT = "u";
 
     /**
      * Verbose command line long option.

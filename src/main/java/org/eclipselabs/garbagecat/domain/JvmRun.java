@@ -51,7 +51,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,6 +60,8 @@ import org.eclipselabs.garbagecat.preprocess.PreprocessAction.PreprocessEvent;
 import org.eclipselabs.garbagecat.util.Constants;
 import org.eclipselabs.garbagecat.util.GcUtil;
 import org.eclipselabs.garbagecat.util.Memory;
+import org.eclipselabs.garbagecat.util.Memory.Unit;
+import org.eclipselabs.garbagecat.util.MemoryAllocation;
 import org.eclipselabs.garbagecat.util.jdk.Analysis;
 import org.eclipselabs.garbagecat.util.jdk.GcTrigger;
 import org.eclipselabs.garbagecat.util.jdk.JdkMath;
@@ -81,15 +82,10 @@ import org.github.joa.domain.JvmContext;
 public class JvmRun {
 
     /**
-     * Min, Max memory being allocated per second (kilobytes) between two collections in row.
+     * Min, Max, High memory being allocated per second (kilobytes) between two collections in row.
      * Avg memory being allocated per second (kilobytes).
      */
-    private Map<String,Long> minMaxAllocationRates;
-
-    /**
-     * High memory allocations.
-     */
-    private List<String> highAllocationRates;
+    private List<MemoryAllocation> minMaxAvgHighMemoryAllocations;
 
     /**
      * Analysis.
@@ -353,9 +349,14 @@ public class JvmRun {
     private int throughputThreshold;
 
     /**
-     * The maximum memory allocation threshold (MB/s) to not be flagged a high memory pressure.
+     * The maximum memory allocation threshold (memory unit/s) to not be flagged a high memory pressure.
      */
-    private int highMemoryAllocationThreshold;
+    private long highMemoryAllocationThreshold;
+
+    /**
+     * The memory unit used for reporting.
+     */
+    private Unit memoryUnit;
 
     /**
      * Log lines that do not match any existing logging patterns.
@@ -403,7 +404,7 @@ public class JvmRun {
      * @param startDate
      *            The JVM start date.
      */
-    public JvmRun(int throughputThreshold, int highMemoryAllocationThreshold, Date startDate) {
+    public JvmRun(int throughputThreshold, long highMemoryAllocationThreshold, Date startDate) {
         this.throughputThreshold = throughputThreshold;
         this.highMemoryAllocationThreshold = highMemoryAllocationThreshold;
         this.startDate = startDate;
@@ -672,18 +673,10 @@ public class JvmRun {
 
     /**
      *
-     * @return The map with min, max and avg amount of memory allocated per time unit expressed in MB/sec
+     * @return The list with min, max, avg and high memory allocations
      */
-    public Map<String,Long> getMinMaxAllocationRates() {
-        return minMaxAllocationRates;
-    }
-
-    /**
-     *
-     * @return The list of high memory allocations above defined threshold.
-     */
-    public List<String> getHighAllocationRates() {
-        return highAllocationRates;
+    public List<MemoryAllocation> getMinMaxAvgHighMemoryAllocations() {
+        return minMaxAvgHighMemoryAllocations;
     }
 
     /**
@@ -1076,6 +1069,10 @@ public class JvmRun {
         return memory;
     }
 
+    public Unit getMemoryUnit() {
+        return memoryUnit;
+    }
+
     /**
      * @return Ratio of old/young space sizes rounded to whole number.
      */
@@ -1190,7 +1187,7 @@ public class JvmRun {
         return throughputThreshold;
     }
 
-    public int getHighMemoryAllocationThreshold() {
+    public long getHighMemoryAllocationThreshold() {
         return highMemoryAllocationThreshold;
     }
 
@@ -1294,12 +1291,8 @@ public class JvmRun {
         return preprocessed;
     }
 
-    public void setMinMaxAllocationRates(Map<String,Long> allocations) {
-        this.minMaxAllocationRates = allocations;
-    }
-
-    public void setHighAllocationRates(List<String> allocations) {
-        this.highAllocationRates = allocations;
+    public void setMinMaxAvgHighMemoryAllocations(List<MemoryAllocation> allocations) {
+        this.minMaxAvgHighMemoryAllocations = allocations;
     }
 
     public void setAnalysis(List<Analysis> analysis) {
@@ -1440,6 +1433,10 @@ public class JvmRun {
      */
     public void setMemory(String memory) {
         this.memory = memory;
+    }
+
+    public void setMemoryUnit(Unit memoryUnit) {
+        this.memoryUnit = memoryUnit;
     }
 
     public void setOtherTimeMax(long otherTimeMax) {

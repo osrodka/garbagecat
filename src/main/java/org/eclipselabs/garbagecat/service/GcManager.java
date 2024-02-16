@@ -13,18 +13,16 @@
 package org.eclipselabs.garbagecat.service;
 
 import static java.util.stream.Collectors.toList;
+import static org.eclipselabs.garbagecat.util.Constants.DEFAULT_MEMORY_UNIT;
 import static org.eclipselabs.garbagecat.util.Memory.kilobytes;
 import static org.eclipselabs.garbagecat.util.Memory.Unit.BYTES;
 import static org.eclipselabs.garbagecat.util.Memory.Unit.KILOBYTES;
-import static org.eclipselabs.garbagecat.util.Memory.Unit.MEGABYTES;
 
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 
@@ -78,6 +76,9 @@ import org.eclipselabs.garbagecat.preprocess.jdk.unified.UnifiedPreprocessAction
 import org.eclipselabs.garbagecat.util.Constants;
 import org.eclipselabs.garbagecat.util.GcUtil;
 import org.eclipselabs.garbagecat.util.Memory;
+import org.eclipselabs.garbagecat.util.MemoryAllocation;
+import org.eclipselabs.garbagecat.util.Memory.Unit;
+import org.eclipselabs.garbagecat.util.MemoryAllocation.AllocationType;
 import org.eclipselabs.garbagecat.util.jdk.Analysis;
 import org.eclipselabs.garbagecat.util.jdk.GcTrigger;
 import org.eclipselabs.garbagecat.util.jdk.JdkMath;
@@ -114,6 +115,11 @@ public class GcManager {
     private Date jvmStartDate;
 
     /**
+     * The memory unit used for reporting.
+     */
+    private Unit memoryUnit;
+
+    /**
      * Last log line unprocessed.
      */
     private String lastLogLineUnprocessed;
@@ -127,7 +133,7 @@ public class GcManager {
      * Default constructor.
      */
     public GcManager() {
-        this(null);
+        this(null, DEFAULT_MEMORY_UNIT);
     }
 
     /**
@@ -136,27 +142,37 @@ public class GcManager {
      * @param jvmStartDate
      *            The JVM start date.
      */
-    public GcManager(Date jvmStartDate) {
+    public GcManager(Date jvmStartDate, Unit memoryUnit) {
         this.jvmDao = new JvmDao();
         this.jvmStartDate = jvmStartDate;
+        this.memoryUnit = memoryUnit;
     }
 
-    private Map<String,Long> getMinMaxAllocationRates() {
-        Map<String,Long> allocations = new HashMap<String,Long>();
+    /**
+     * Determine <code>MemoryAllocation</code>s where throughput is max, min, avg or high.
+     * 
+     * @param highMemoryAllocationThreshold
+     *            The high memory reporting threshold.
+     * @return A <code>List</code> of <code>MemoryAllocation</code>s with max, min, avg or high memory allocation.
+     */
+    private List<MemoryAllocation> getMinMaxAvgHighMemoryAllocations(long highMemoryAllocationThreshold) {
+        List<MemoryAllocation> allocations = new ArrayList<MemoryAllocation>();
         List<BlockingEvent> blockingEvents = jvmDao.getBlockingEvents().stream()
-                .filter(e -> e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PAUSE.toString())
-                        || e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PREPARE_MIXED.toString())
-                        || e.getName().equals(LogEventType.UNIFIED_G1_MIXED_PAUSE.toString())
-                        || e.getName().equals(LogEventType.UNIFIED_G1_CLEANUP.toString())
-                        || e.getName().equals(LogEventType.UNIFIED_REMARK.toString())
-                        || e.getName().equals(LogEventType.G1_FULL_GC_PARALLEL.toString()))
-                .collect(toList());
+        .filter(e -> e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PAUSE.toString())
+                || e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PREPARE_MIXED.toString())
+                || e.getName().equals(LogEventType.UNIFIED_G1_MIXED_PAUSE.toString())
+                || e.getName().equals(LogEventType.UNIFIED_G1_CLEANUP.toString())
+                || e.getName().equals(LogEventType.UNIFIED_REMARK.toString())
+                || e.getName().equals(LogEventType.G1_FULL_GC_PARALLEL.toString()))
+        .collect(toList());
 
-        long maxAllocatedKbPerSec = 0;
-        long minAllocatedKbPerSec = -1;
-        long avgAllocatedKbPerSec = 0;
+        MemoryAllocation maxMemoryAllocation = new MemoryAllocation(Memory.memory(0, KILOBYTES), AllocationType.MAX);
+        MemoryAllocation minMemoryAllocation = new MemoryAllocation(Memory.memory(0, KILOBYTES), AllocationType.MIN);
+        MemoryAllocation avgMemoryAllocation = new MemoryAllocation(Memory.memory(0, KILOBYTES), AllocationType.AVG);
         long totalAllocatedMemory = 0;
         long firstEventTs = 0;
+        // convert to Kb
+        long treshold = Memory.memory(highMemoryAllocationThreshold, memoryUnit).getValue(KILOBYTES);
         BlockingEvent prior = null;
 
         for (BlockingEvent event : blockingEvents) {
@@ -179,76 +195,50 @@ public class GcManager {
                     long durationMs = young.getTimestamp() - prior.getTimestamp();
                     long allocatedKbPerSec = allocatedKb / durationMs * 1000;
 
-                    minAllocatedKbPerSec = (minAllocatedKbPerSec == -1 || minAllocatedKbPerSec > allocatedKbPerSec)
-                            ? allocatedKbPerSec
-                            : minAllocatedKbPerSec;
-                    maxAllocatedKbPerSec = (maxAllocatedKbPerSec < allocatedKbPerSec) ? allocatedKbPerSec
-                            : maxAllocatedKbPerSec;
+                    long maxAllocatedKbPerSec = maxMemoryAllocation.getAllocatedMemory().getValue(KILOBYTES);
+                    if (maxAllocatedKbPerSec < allocatedKbPerSec) {
+                        maxMemoryAllocation.setAllocatedMemory(Memory.kilobytes(allocatedKbPerSec));
+                        maxMemoryAllocation.setInitLogEntry(prior.getLogEntry());
+                        maxMemoryAllocation.setInitLogEntryTimestamp(prior.getTimestamp());
+                        maxMemoryAllocation.setEndLogEntry(young.getLogEntry());
+                        maxMemoryAllocation.setEndLogEntryTimestamp(young.getTimestamp());
+                    }
+
+                    long minAllocatedKbPerSec = minMemoryAllocation.getAllocatedMemory().getValue(KILOBYTES);
+                    if (minAllocatedKbPerSec == 0 || minAllocatedKbPerSec > allocatedKbPerSec) {
+                        minMemoryAllocation.setAllocatedMemory(Memory.kilobytes(allocatedKbPerSec));
+                        minMemoryAllocation.setInitLogEntry(prior.getLogEntry());
+                        minMemoryAllocation.setInitLogEntryTimestamp(young.getTimestamp());
+                        minMemoryAllocation.setEndLogEntry(young.getLogEntry());
+                        minMemoryAllocation.setEndLogEntryTimestamp(young.getTimestamp());
+                    }
+
+                    if (allocatedKbPerSec > treshold) {
+                        MemoryAllocation highMemoryAllocation = new MemoryAllocation(
+                                Memory.memory(allocatedKbPerSec, KILOBYTES), AllocationType.HIGH);
+                        highMemoryAllocation.setInitLogEntry(prior.getLogEntry());
+                        highMemoryAllocation.setInitLogEntryTimestamp(prior.getTimestamp());
+                        highMemoryAllocation.setEndLogEntry(young.getLogEntry());
+                        highMemoryAllocation.setEndLogEntryTimestamp(young.getTimestamp());
+                        allocations.add(highMemoryAllocation);
+                    }
+
                     totalAllocatedMemory += allocatedKb;
                 }
             }
             prior = young;
         }
         
-        avgAllocatedKbPerSec = (prior != null && (prior.getTimestamp() - firstEventTs) > 0)
-                ? (totalAllocatedMemory / (prior.getTimestamp() - firstEventTs) * 1000)
-                : avgAllocatedKbPerSec;
-
-        allocations.put("max", maxAllocatedKbPerSec);
-        allocations.put("min", minAllocatedKbPerSec);
-        allocations.put("avg", avgAllocatedKbPerSec);
-
-        return allocations;
-    }
-
-    /**
-     * @return
-     */
-    private List<String> getHighAllocationRates(int highMemoryAllocationThreshold) {
-        List<String> allocations = new ArrayList<String>();
-        List<BlockingEvent> blockingEvents = jvmDao.getBlockingEvents().stream()
-                .filter(e -> e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PAUSE.toString())
-                        || e.getName().equals(LogEventType.UNIFIED_G1_YOUNG_PREPARE_MIXED.toString())
-                        || e.getName().equals(LogEventType.UNIFIED_G1_MIXED_PAUSE.toString())
-                        || e.getName().equals(LogEventType.UNIFIED_G1_CLEANUP.toString())
-                        || e.getName().equals(LogEventType.UNIFIED_REMARK.toString())
-                        || e.getName().equals(LogEventType.G1_FULL_GC_PARALLEL.toString()))
-                .collect(toList());
-
-        BlockingEvent prior = null;
-        // convert from Mb to Kb
-        long treshold = highMemoryAllocationThreshold * 1024;
-
-        for (BlockingEvent event : blockingEvents) {
-            BlockingEvent young = event;
-            long allocatedKb = 0;
-            if (prior == null) {
-                // skip the first event since we don't know if this is a complete JVM run
-                // and therefore can't accurately calculate allocation rate prior to the first log
-                // youngGc pause event
-                prior = young;
-                continue;
-            }
-            // will not have eden information if gc details not being logged
-            if (young instanceof CombinedData && prior instanceof CombinedData) {
-                Memory init = ((CombinedData) young).getCombinedOccupancyInit();
-                Memory end = ((CombinedData) prior).getCombinedOccupancyEnd();
-                if (init != null && end != null && init.greaterThan(end)) {
-                    allocatedKb = init.minus(end).getValue(KILOBYTES);
-                    long durationMs = young.getTimestamp() - prior.getTimestamp();
-                    long allocatedKbPerSec = allocatedKb / durationMs * 1000;
-
-                    if (allocatedKbPerSec > treshold) {
-                        allocations.add(Long.toString(Memory.memory(allocatedKbPerSec, KILOBYTES).getValue(MEGABYTES))
-                                .concat(" MB/s"));
-                        allocations.add("|--".concat(prior.getLogEntry()));
-                        allocations.add("|--".concat(young.getLogEntry()));
-                        allocations.add("...");
-                    }
-                }
-            }
-            prior = young;
+        if (prior != null && (prior.getTimestamp() - firstEventTs) > 0) {
+            long avgAllocatedKbPerSec = totalAllocatedMemory / (prior.getTimestamp() - firstEventTs) * 1000;
+            avgMemoryAllocation.setAllocatedMemory(Memory.kilobytes(avgAllocatedKbPerSec));
+            avgMemoryAllocation.setInitLogEntryTimestamp(firstEventTs);
+            avgMemoryAllocation.setEndLogEntryTimestamp(prior.getTimestamp());
         }
+
+        allocations.add(avgMemoryAllocation);
+        allocations.add(maxMemoryAllocation);
+        allocations.add(minMemoryAllocation);
 
         return allocations;
     }
@@ -319,9 +309,11 @@ public class GcManager {
      *            (e.g. it does not include log file name, rotation details, etc.).
      * @param throughputThreshold
      *            The throughput threshold for bottleneck reporting.
+     * @param highMemoryAllocationThreshold
+     *            The high memory reporting threshold.
      * @return The JVM run data.
      */
-    public JvmRun getJvmRun(String jvmOptions, int throughputThreshold, int highMemoryAllocationThreshold) {
+    public JvmRun getJvmRun(String jvmOptions, int throughputThreshold, long highMemoryAllocationThreshold) {
         JvmRun jvmRun = new JvmRun(throughputThreshold, highMemoryAllocationThreshold, jvmStartDate);
         // Use jvm options passed in on the command line if none found in the logging
         // TODO: jvm options passed on the command line should override options found in the logging header because the
@@ -330,9 +322,8 @@ public class GcManager {
             jvmDao.getJvmContext().setOptions(jvmOptions);
         }
         jvmRun.setJvmOptions(new JvmOptions(jvmDao.getJvmContext()));
-
-        jvmRun.setMinMaxAllocationRates(getMinMaxAllocationRates());
-        jvmRun.setHighAllocationRates(getHighAllocationRates(jvmRun.getHighMemoryAllocationThreshold()));
+        jvmRun.setMemoryUnit(memoryUnit);
+        jvmRun.setMinMaxAvgHighMemoryAllocations(getMinMaxAvgHighMemoryAllocations(jvmRun.getHighMemoryAllocationThreshold()));
         jvmRun.setAnalysis(jvmDao.getAnalysis());
         jvmRun.setBlockingEventCount(jvmDao.getBlockingEventCount());
         jvmRun.setEventTypes(jvmDao.getEventTypes());

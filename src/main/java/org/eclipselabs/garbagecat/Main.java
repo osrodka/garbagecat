@@ -12,16 +12,20 @@
  *********************************************************************************************************************/
 package org.eclipselabs.garbagecat;
 
+import static java.util.stream.Collectors.toList;
 import static org.eclipselabs.garbagecat.OptionsParser.options;
 import static org.eclipselabs.garbagecat.OptionsParser.parseOptions;
 import static org.eclipselabs.garbagecat.util.Constants.DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD;
 import static org.eclipselabs.garbagecat.util.Constants.DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD;
+import static org.eclipselabs.garbagecat.util.Constants.DEFAULT_MEMORY_UNIT;
 import static org.eclipselabs.garbagecat.util.Constants.LINE_SEPARATOR;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_HELP_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_JVMOPTIONS_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_JVMOPTIONS_SHORT;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_MEMALLOCTHRESHOLD_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_MEMALLOCTHRESHOLD_SHORT;
+import static org.eclipselabs.garbagecat.util.Constants.OPTION_MEMORYUNIT_LONG;
+import static org.eclipselabs.garbagecat.util.Constants.OPTION_MEMORYUNIT_SHORT;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_OUTPUT_LONG;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_OUTPUT_SHORT;
 import static org.eclipselabs.garbagecat.util.Constants.OPTION_PREPROCESS_LONG;
@@ -36,7 +40,6 @@ import static org.eclipselabs.garbagecat.util.Constants.OUTPUT_FILE_NAME;
 import static org.eclipselabs.garbagecat.util.GcUtil.parseStartDateTime;
 import static org.eclipselabs.garbagecat.util.Memory.ZERO;
 import static org.eclipselabs.garbagecat.util.Memory.Unit.KILOBYTES;
-import static org.eclipselabs.garbagecat.util.Memory.Unit.MEGABYTES;
 import static org.eclipselabs.garbagecat.util.jdk.Analysis.INFO_PERM_GEN;
 
 import java.io.File;
@@ -53,7 +56,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.HelpFormatter;
@@ -62,6 +64,9 @@ import org.eclipselabs.garbagecat.domain.JvmRun;
 import org.eclipselabs.garbagecat.domain.jdk.unified.SafepointEventSummary;
 import org.eclipselabs.garbagecat.service.GcManager;
 import org.eclipselabs.garbagecat.util.Memory;
+import org.eclipselabs.garbagecat.util.MemoryAllocation;
+import org.eclipselabs.garbagecat.util.Memory.Unit;
+import org.eclipselabs.garbagecat.util.MemoryAllocation.AllocationType;
 import org.eclipselabs.garbagecat.util.jdk.JdkMath;
 import org.eclipselabs.garbagecat.util.jdk.JdkUtil;
 import org.eclipselabs.garbagecat.util.jdk.JdkUtil.LogEventType;
@@ -120,7 +125,17 @@ public class Main {
         }
         List<String> logLines = Files.readAllLines(Paths.get(logFileUri));
 
-        GcManager gcManager = new GcManager(jvmStartDate);
+        // Determine memory unit
+        Unit memoryUnit = DEFAULT_MEMORY_UNIT;
+        if (cmd.hasOption(OPTION_MEMORYUNIT_LONG)) {
+            try {
+                memoryUnit = Unit.valueOf(cmd.getOptionValue(OPTION_MEMORYUNIT_SHORT));
+            } catch (IllegalArgumentException e) {
+                System.err.println(e + "\nUsing default instead: " + DEFAULT_MEMORY_UNIT);
+            }
+        }
+
+        GcManager gcManager = new GcManager(jvmStartDate, memoryUnit);
 
         // Do preprocessing
         if (cmd.hasOption(OPTION_PREPROCESS_LONG) || cmd.hasOption(OPTION_STARTDATETIME_LONG)) {
@@ -150,8 +165,9 @@ public class Main {
         int throughputThreshold = cmd.hasOption(OPTION_THRESHOLD_LONG)
                 ? Integer.parseInt(cmd.getOptionValue(OPTION_THRESHOLD_SHORT))
                 : DEFAULT_BOTTLENECK_THROUGHPUT_THRESHOLD;
-        int highMemoryAllocationThreshold = cmd.hasOption(OPTION_MEMALLOCTHRESHOLD_LONG)
-                ? Integer.parseInt(cmd.getOptionValue(OPTION_MEMALLOCTHRESHOLD_SHORT))
+        long highMemoryAllocationThreshold = cmd.hasOption(OPTION_MEMALLOCTHRESHOLD_LONG)
+                ? Memory.memory(Long.valueOf(cmd.getOptionValue(OPTION_MEMALLOCTHRESHOLD_SHORT)), memoryUnit)
+                        .getValue(memoryUnit)
                 : DEFAULT_HIGH_MEMORY_ALLOCATION_THRESHOLD;
         JvmRun jvmRun = gcManager.getJvmRun(jvmOptions, throughputThreshold, highMemoryAllocationThreshold);
         boolean reportConsole = cmd.hasOption(OPTION_REPORT_CONSOLE_LONG);
@@ -312,63 +328,95 @@ public class Main {
                     // Max heap occupancy.
                     if (jvmRun.getMaxHeapOccupancy() != null) {
                         printWriter.write(
-                                "Heap Used Max: " + jvmRun.getMaxHeapOccupancy().convertTo(KILOBYTES) + LINE_SEPARATOR);
+                                "Heap Used Max: " + jvmRun.getMaxHeapOccupancy().convertTo(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
                     } else if (jvmRun.getMaxHeapOccupancyNonBlocking() != null) {
                         printWriter.write("Heap Used Max: "
-                                + jvmRun.getMaxHeapOccupancyNonBlocking().convertTo(KILOBYTES) + LINE_SEPARATOR);
+                                + jvmRun.getMaxHeapOccupancyNonBlocking().convertTo(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
                     }
                     // Max heap after GC.
                     if (jvmRun.getMaxHeapAfterGc() != null) {
-                        printWriter.write("Heap After GC Max: " + jvmRun.getMaxHeapAfterGc().convertTo(KILOBYTES)
+                        printWriter.write("Heap After GC Max: " + jvmRun.getMaxHeapAfterGc().convertTo(jvmRun.getMemoryUnit())
                                 + LINE_SEPARATOR);
                     }
                     // Max heap space.
                     if (jvmRun.getMaxHeapSpace() != null) {
-                        printWriter.write("Heap Allocation Max: " + jvmRun.getMaxHeapSpace().convertTo(KILOBYTES)
+                        printWriter.write("Heap Allocation Max: " + jvmRun.getMaxHeapSpace().convertTo(jvmRun.getMemoryUnit())
                                 + LINE_SEPARATOR);
                     } else if (jvmRun.getMaxHeapSpaceNonBlocking() != null) {
                         printWriter.write("Heap Allocation Max: "
-                                + jvmRun.getMaxHeapSpaceNonBlocking().convertTo(KILOBYTES) + LINE_SEPARATOR);
+                                + jvmRun.getMaxHeapSpaceNonBlocking().convertTo(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
                     }
                 }
 
                 if (jvmRun.getMaxPermSpace().greaterThan(ZERO)) {
                     if (jvmRun.getAnalysis() != null && jvmRun.hasAnalysis(INFO_PERM_GEN.getKey())) {
                         // Max perm occupancy.
-                        printWriter.write("Perm Gen Used Max: " + jvmRun.getMaxPermOccupancy().convertTo(KILOBYTES)
+                        printWriter.write("Perm Gen Used Max: " + jvmRun.getMaxPermOccupancy().convertTo(jvmRun.getMemoryUnit())
                                 + LINE_SEPARATOR);
                         // Max perm after GC.
-                        printWriter.write("Perm Gen After GC Max: " + jvmRun.getMaxPermAfterGc().convertTo(KILOBYTES)
+                        printWriter.write("Perm Gen After GC Max: " + jvmRun.getMaxPermAfterGc().convertTo(jvmRun.getMemoryUnit())
                                 + LINE_SEPARATOR);
                         // Max perm space.
-                        printWriter.write("Perm Gen Allocation Max: " + jvmRun.getMaxPermSpace().convertTo(KILOBYTES)
+                        printWriter.write("Perm Gen Allocation Max: " + jvmRun.getMaxPermSpace().convertTo(jvmRun.getMemoryUnit())
                                 + LINE_SEPARATOR);
                     } else {
                         // Max metaspace occupancy.
-                        printWriter.write("Metaspace Used Max: " + jvmRun.getMaxPermOccupancy().convertTo(KILOBYTES)
+                        printWriter.write("Metaspace Used Max: " + jvmRun.getMaxPermOccupancy().convertTo(jvmRun.getMemoryUnit())
                                 + LINE_SEPARATOR);
                         // Max metaspace after GC.
-                        printWriter.write("Metaspace After GC Max: " + jvmRun.getMaxPermAfterGc().convertTo(KILOBYTES)
+                        printWriter.write("Metaspace After GC Max: " + jvmRun.getMaxPermAfterGc().convertTo(jvmRun.getMemoryUnit())
                                 + LINE_SEPARATOR);
                         // Max metaspace space.
-                        printWriter.write("Metaspace Allocation Max: " + jvmRun.getMaxPermSpace().convertTo(KILOBYTES)
+                        printWriter.write("Metaspace Allocation Max: " + jvmRun.getMaxPermSpace().convertTo(jvmRun.getMemoryUnit())
                                 + LINE_SEPARATOR);
                     }
                 } else if (jvmRun.getMaxPermSpaceNonBlocking().greaterThan(ZERO)) {
                     if (jvmRun.getAnalysis() != null && jvmRun.hasAnalysis(INFO_PERM_GEN.getKey())) {
                         // Max perm occupancy.
                         printWriter.write("Perm Gen Used Max: "
-                                + jvmRun.getMaxPermOccupancyNonBlocking().convertTo(KILOBYTES) + LINE_SEPARATOR);
+                                + jvmRun.getMaxPermOccupancyNonBlocking().convertTo(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
                         // Max perm space.
                         printWriter.write("Perm Gen Allocation Max: "
-                                + jvmRun.getMaxPermSpaceNonBlocking().convertTo(KILOBYTES) + LINE_SEPARATOR);
+                                + jvmRun.getMaxPermSpaceNonBlocking().convertTo(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
                     } else {
                         // Max metaspace occupancy.
                         printWriter.write("Metaspace Used Max: "
-                                + jvmRun.getMaxPermOccupancyNonBlocking().convertTo(KILOBYTES) + LINE_SEPARATOR);
+                                + jvmRun.getMaxPermOccupancyNonBlocking().convertTo(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
                         // Max metaspace space.
                         printWriter.write("Metaspace Allocation Max: "
-                                + jvmRun.getMaxPermSpaceNonBlocking().convertTo(KILOBYTES) + LINE_SEPARATOR);
+                                + jvmRun.getMaxPermSpaceNonBlocking().convertTo(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
+                    }
+                }
+                // As of now the max/min allocation rate is only implemented for G1GC collector.
+                if (jvmRun.getJvmOptions().getUseG1Gc() != null
+                        || jvmRun.getEventTypes().contains(LogEventType.G1_YOUNG_PAUSE)
+                        || jvmRun.getEventTypes().contains(LogEventType.UNIFIED_G1_YOUNG_PAUSE)) {
+                    List<MemoryAllocation> allocations = jvmRun.getMinMaxAvgHighMemoryAllocations().stream()
+                            .filter(a -> a.getAllocationType().equals(AllocationType.AVG)
+                                    || a.getAllocationType().equals(AllocationType.MAX)
+                                    || a.getAllocationType().equals(AllocationType.MIN))
+                            .collect(toList());
+                    for (MemoryAllocation allocation : allocations) {
+                        printWriter.write(allocation.toString(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
+                        if (!allocation.getAllocationType().equals(AllocationType.AVG)) {
+                            if (jvmRun.getStartDate() != null) {
+                                printWriter.write("|--");
+                                printWriter
+                                        .write(JdkUtil.convertLogEntryTimestampsToDateStamp(
+                                                allocation.getInitLogEntry(), jvmRun.getStartDate())
+                                                + LINE_SEPARATOR);
+                                printWriter.write("|--");
+                                printWriter
+                                        .write(JdkUtil.convertLogEntryTimestampsToDateStamp(allocation.getEndLogEntry(),
+                                                jvmRun.getStartDate())
+                                                + LINE_SEPARATOR);
+                            } else {
+                                printWriter.write("|--");
+                                printWriter.write(allocation.getInitLogEntry() + LINE_SEPARATOR);
+                                printWriter.write("|--");
+                                printWriter.write(allocation.getEndLogEntry() + LINE_SEPARATOR);
+                            }
+                        }
                     }
                 }
                 // GC throughput
@@ -379,31 +427,6 @@ public class Main {
                     printWriter.write("~");
                 }
                 printWriter.write(jvmRun.getGcThroughput() + "%" + LINE_SEPARATOR);
-
-                // As of now the max/min allocation rate is only implemented for G1GC collector.
-                if (jvmRun.getJvmOptions().getUseG1Gc() != null
-                        || jvmRun.getEventTypes().contains(LogEventType.G1_YOUNG_PAUSE)
-                        || jvmRun.getEventTypes().contains(LogEventType.UNIFIED_G1_YOUNG_PAUSE)) {
-                    Map<String,Long> minMaxAllocationRates = jvmRun.getMinMaxAllocationRates();
-                    long allocationRate = minMaxAllocationRates.get("avg");
-                    long maxAllocationRate = minMaxAllocationRates.get("max");
-                    long minAllocationRate = minMaxAllocationRates.get("min");
-                    if (allocationRate > 0 && maxAllocationRate > 0 && minAllocationRate >= 0) {
-                        Memory avgKBPerSec = Memory.memory(allocationRate, KILOBYTES);
-                        Memory maxKBPerSec = Memory.memory(maxAllocationRate, KILOBYTES);
-                        Memory minKBPerSec = Memory.memory(minAllocationRate, KILOBYTES);
-                        printWriter.write(
-                                "Avg Allocation Rate: " + Long.toString(avgKBPerSec.getValue(MEGABYTES)) + " MB/sec"
-                                        + LINE_SEPARATOR);
-                        printWriter.write(
-                                "Max Allocation Rate: " + Long.toString(maxKBPerSec.getValue(MEGABYTES)) + " MB/sec"
-                                        + LINE_SEPARATOR);
-                        printWriter.write(
-                                "Min Allocation Rate: " + Long.toString(minKBPerSec.getValue(MEGABYTES)) + " MB/sec"
-                                        + LINE_SEPARATOR);
-                    }
-                }
-
                 // GC max pause
                 BigDecimal maxGcPause = JdkMath.convertMicrosToSecs(jvmRun.getDurationMax());
                 printWriter.write("GC Pause Max: ");
@@ -626,19 +649,33 @@ public class Main {
             }
 
             // High Memory Allocations
-            List<String> allocations = jvmRun.getHighAllocationRates();
+            List<MemoryAllocation> allocations = jvmRun.getMinMaxAvgHighMemoryAllocations().stream()
+                    .filter(a -> a.getAllocationType().equals(AllocationType.HIGH))
+                    .collect(toList());
             if (!allocations.isEmpty()) {
                 printWriter.write(
-                        "Memory Allocations greater than " + jvmRun.getHighMemoryAllocationThreshold() + " MB/sec"
+                        "Memory Allocations greater than " + jvmRun.getHighMemoryAllocationThreshold()
+                                + jvmRun.getMemoryUnit().getName() + "/sec"
                                 + LINE_SEPARATOR);
                 printWriter.write(LINEBREAK_SINGLE);
-                for (String allocation : allocations) {
+                for (MemoryAllocation allocation : allocations) {
+                    printWriter.write(allocation.toString(jvmRun.getMemoryUnit()) + LINE_SEPARATOR);
                     if (jvmRun.getStartDate() != null) {
+                        printWriter.write("|--");
                         printWriter
-                                .write(JdkUtil.convertLogEntryTimestampsToDateStamp(allocation, jvmRun.getStartDate())
+                                .write(JdkUtil.convertLogEntryTimestampsToDateStamp(
+                                        allocation.getInitLogEntry(), jvmRun.getStartDate())
+                                        + LINE_SEPARATOR);
+                        printWriter.write("|--");
+                        printWriter
+                                .write(JdkUtil.convertLogEntryTimestampsToDateStamp(allocation.getEndLogEntry(),
+                                        jvmRun.getStartDate())
                                         + LINE_SEPARATOR);
                     } else {
-                        printWriter.write(allocation + LINE_SEPARATOR);
+                        printWriter.write("|--");
+                        printWriter.write(allocation.getInitLogEntry() + LINE_SEPARATOR);
+                        printWriter.write("|--");
+                        printWriter.write(allocation.getEndLogEntry() + LINE_SEPARATOR);
                     }
                 }
             }
