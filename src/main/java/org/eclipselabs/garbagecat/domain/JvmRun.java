@@ -51,6 +51,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -62,6 +63,7 @@ import org.eclipselabs.garbagecat.util.GcUtil;
 import org.eclipselabs.garbagecat.util.Memory;
 import org.eclipselabs.garbagecat.util.Memory.Unit;
 import org.eclipselabs.garbagecat.util.MemoryAllocation;
+import org.eclipselabs.garbagecat.util.RunTimeWindow;
 import org.eclipselabs.garbagecat.util.jdk.Analysis;
 import org.eclipselabs.garbagecat.util.jdk.GcTrigger;
 import org.eclipselabs.garbagecat.util.jdk.JdkMath;
@@ -86,6 +88,10 @@ public class JvmRun {
      * Avg memory being allocated per second (kilobytes).
      */
     private List<MemoryAllocation> minMaxAvgHighMemoryAllocations;
+
+    private List<RunTimeWindow> runTimeWindows;
+
+    private Map<String, String> runTimeWindowsHistogram;
 
     /**
      * Analysis.
@@ -677,6 +683,14 @@ public class JvmRun {
      */
     public List<MemoryAllocation> getMinMaxAvgHighMemoryAllocations() {
         return minMaxAvgHighMemoryAllocations;
+    }
+
+    public List<RunTimeWindow> getRunTimeWindows() {
+        return runTimeWindows;
+    }
+
+    public Map<String, String> getRunTimeWindowsHistogram() {
+        return runTimeWindowsHistogram;
     }
 
     /**
@@ -1293,6 +1307,14 @@ public class JvmRun {
 
     public void setMinMaxAvgHighMemoryAllocations(List<MemoryAllocation> allocations) {
         this.minMaxAvgHighMemoryAllocations = allocations;
+    }
+
+    public void setRunTimeWindows(List<RunTimeWindow> windows) {
+        this.runTimeWindows = windows;
+    }
+
+    public void setRunTimeWindowsHistogram(Map<String, String> histogram) {
+        this.runTimeWindowsHistogram = histogram;
     }
 
     public void setAnalysis(List<Analysis> analysis) {

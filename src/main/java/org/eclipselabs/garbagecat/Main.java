@@ -56,6 +56,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.HelpFormatter;
@@ -65,6 +67,7 @@ import org.eclipselabs.garbagecat.domain.jdk.unified.SafepointEventSummary;
 import org.eclipselabs.garbagecat.service.GcManager;
 import org.eclipselabs.garbagecat.util.Memory;
 import org.eclipselabs.garbagecat.util.MemoryAllocation;
+import org.eclipselabs.garbagecat.util.RunTimeWindow;
 import org.eclipselabs.garbagecat.util.Memory.Unit;
 import org.eclipselabs.garbagecat.util.MemoryAllocation.AllocationType;
 import org.eclipselabs.garbagecat.util.jdk.JdkMath;
@@ -578,6 +581,17 @@ public class Main {
                             UnifiedSafepoint.getTriggerLiteral(summary.getTrigger()), summary.getCount(),
                             pauseTotalString, percentString, pauseMaxString);
                 }
+                // MMU summary
+                printWriter.write(LINEBREAK_DOUBLE);
+                printWriter.printf("%-30s%10s%12s%n", "MMU (2s window):", "#", "");
+                printWriter.write(LINEBREAK_SINGLE);
+                Map<String, String> histogram = jvmRun.getRunTimeWindowsHistogram();
+
+                Set<Map.Entry<String, String>> entries = histogram.entrySet();
+                for (Map.Entry<String, String> entry : entries) {
+                    printWriter.printf("%-30s%10s%n", entry.getKey(), entry.getValue());
+                }
+
             }
 
             printWriter.write(LINEBREAK_DOUBLE);
@@ -678,6 +692,31 @@ public class Main {
                         printWriter.write(allocation.getEndLogEntry() + LINE_SEPARATOR);
                     }
                 }
+                printWriter.write(LINEBREAK_DOUBLE);
+            }
+
+            // MMU in time window
+            List<RunTimeWindow> mmuWindows = jvmRun.getRunTimeWindows().stream()
+                    .filter(mmu -> mmu.getPauseTime() > 1000000).collect(toList());
+            if (!mmuWindows.isEmpty()) {
+                printWriter.write(
+                        "MMU (2s windows) below 50 %" + LINE_SEPARATOR);
+                printWriter.write(LINEBREAK_SINGLE);
+                for (RunTimeWindow mmuWindow : mmuWindows) {
+                    printWriter.write(mmuWindow.toString() + LINE_SEPARATOR);
+                    List<String> logEntries = mmuWindow.getLogEntries();
+                    for (String logEntry : logEntries) {
+                        printWriter.write("|--");
+                        if (jvmRun.getStartDate() != null) {
+                            printWriter.write(
+                                    JdkUtil.convertLogEntryTimestampsToDateStamp(logEntry, jvmRun.getStartDate())
+                                            + LINE_SEPARATOR);
+                        } else {
+                            printWriter.write(logEntry + LINE_SEPARATOR);
+                        }
+                    }
+                }
+                printWriter.write(LINEBREAK_DOUBLE);
             }
 
             // GC Bottlenecks

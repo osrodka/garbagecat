@@ -22,7 +22,9 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 
@@ -77,6 +79,7 @@ import org.eclipselabs.garbagecat.util.Constants;
 import org.eclipselabs.garbagecat.util.GcUtil;
 import org.eclipselabs.garbagecat.util.Memory;
 import org.eclipselabs.garbagecat.util.MemoryAllocation;
+import org.eclipselabs.garbagecat.util.RunTimeWindow;
 import org.eclipselabs.garbagecat.util.Memory.Unit;
 import org.eclipselabs.garbagecat.util.MemoryAllocation.AllocationType;
 import org.eclipselabs.garbagecat.util.jdk.Analysis;
@@ -243,6 +246,75 @@ public class GcManager {
         return allocations;
     }
 
+    private List<RunTimeWindow> getRunTimeWindows(int interval) {
+        List<SafepointEvent> blockingEvents = jvmDao.getSafepointEvents();
+        List<RunTimeWindow> windows = new ArrayList<RunTimeWindow>();
+        
+        //convert from secs to micros
+        interval = interval * 1000000;
+        RunTimeWindow window = new RunTimeWindow(0, 0);
+        
+        for (SafepointEvent event : blockingEvents) {
+            long eventDuration = event.getDurationMicros();
+            long currentEventStartTime = JdkMath.convertMillisToMicros(String.valueOf(event.getTimestamp())).longValue();
+            long currentEventEndTime = currentEventStartTime + eventDuration;
+            long currentWindowNumber = currentEventStartTime / interval;
+            long currentWindowEndTime = currentWindowNumber * interval + interval;
+
+            if (window.getNumber() != currentWindowNumber) {
+                windows.add(window);
+                window = new RunTimeWindow(currentWindowNumber, interval);
+            }
+
+            if (currentEventEndTime < currentWindowEndTime) {
+                window.addPauseTime(eventDuration);
+                window.addLogEntry(event.getLogEntry());
+                continue;
+            }
+            if (currentEventEndTime > currentWindowEndTime) {
+                window.addPauseTime(currentWindowEndTime - currentEventStartTime);
+                window.addLogEntry(event.getLogEntry());
+                windows.add(window);
+
+                long remaining = currentEventEndTime - currentWindowEndTime;
+                while (remaining > interval) {
+                    currentWindowNumber += 1;
+                    window = new RunTimeWindow(currentWindowNumber, interval);
+                    window.setPauseTime(interval);
+                    window.addLogEntry(event.getLogEntry());
+                    windows.add(window);
+                    remaining -= interval;
+                }
+
+                currentWindowNumber += 1;
+                window = new RunTimeWindow(currentWindowNumber, interval);
+                window.addPauseTime(remaining);
+                window.addLogEntry(event.getLogEntry());
+            }
+        }
+        windows.add(window);
+
+        return windows;
+    }
+
+    private Map<String, String> createRunTimeWindowsHistogram(List<RunTimeWindow> windows, int interval, int slices) {
+        Map<String, String> histrogam = new LinkedHashMap<String, String>();
+        long sliceLength = interval * 1000000 / slices;
+
+        for (int i = 0; i < slices; i++) {
+            final long sliceStart = i * sliceLength;
+            final long sliceEnd = sliceStart + sliceLength;
+            long count = windows.stream().filter(w -> w.getPauseTime() > sliceStart)
+                    .filter(w -> w.getPauseTime() <= sliceEnd)
+                    .count();
+            //key -> slices start - end in milliseconds e.g. 0 - 400ms
+            String key = String.valueOf(sliceStart/1000) + "-" + String.valueOf(sliceEnd/1000);
+            histrogam.put(key, String.valueOf(count));
+        }
+
+        return histrogam;
+    }
+
     /**
      * Determine <code>BlockingEvent</code>s where throughput since last event does not meet the throughput goal.
      * 
@@ -324,6 +396,12 @@ public class GcManager {
         jvmRun.setJvmOptions(new JvmOptions(jvmDao.getJvmContext()));
         jvmRun.setMemoryUnit(memoryUnit);
         jvmRun.setMinMaxAvgHighMemoryAllocations(getMinMaxAvgHighMemoryAllocations(jvmRun.getHighMemoryAllocationThreshold()));
+        // TODO: window interval and number of slices should be adjustable from cmd
+        List<RunTimeWindow> windows = getRunTimeWindows(2);
+        jvmRun.setRunTimeWindows(windows);
+        jvmRun.setRunTimeWindowsHistogram(
+                createRunTimeWindowsHistogram(windows, 2, 5));
+
         jvmRun.setAnalysis(jvmDao.getAnalysis());
         jvmRun.setBlockingEventCount(jvmDao.getBlockingEventCount());
         jvmRun.setEventTypes(jvmDao.getEventTypes());
